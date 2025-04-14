@@ -1,110 +1,177 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
+ 
 <head>
-<title>YOLO + Three.js Box Detection</title>
+<meta charset="UTF-8">
+<title>Objectron Box Dimensions</title>
 <style>
-
-    body { margin: 0; overflow: hidden; }
-
-    video, canvas { position: absolute; top: 0; left: 0; }
-
-    #overlay { z-index: 10; position: absolute; color: white; background: rgba(0,0,0,0.5); padding: 4px; }
+    video,
+    canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+    }
 </style>
 </head>
+ 
 <body>
-<video id="video" autoplay playsinline muted width="640" height="480"></video>
-<div id="overlay">Detecting...</div>
-<canvas id="three-canvas"></canvas>
+<video class="input_video" autoplay muted playsinline style="width: 860px; height: 860px;"></video>
+<canvas class="output_canvas" width="860" height="860"></canvas>
  
-  <!-- TensorFlow + COCO-SSD -->
-<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.0.0"></script>
-<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
- 
-  <!-- Three.js -->
-<script src="https://cdn.jsdelivr.net/npm/three@0.153.0/build/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/objectron/objectron.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
  
   <script>
-
-    const video = document.getElementById('video');
-
-    const overlay = document.getElementById('overlay');
+    const videoElement = document.querySelector('.input_video');
+    const canvasElement = document.querySelector('.output_canvas');
+    const canvasCtx = canvasElement.getContext('2d');
  
-    async function setupCamera() {
-
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-
-      video.srcObject = stream;
-
-      return new Promise(resolve => video.onloadedmetadata = resolve);
-
+    const objectron = new Objectron({
+      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/objectron/${file}`
+    });
+ 
+    objectron.setOptions({
+      modelName: 'Cup',
+      maxNumObjects: 1,
+      minDetectionConfidence: 0.5,
+      minTrackingConfidence: 0.99,
+    });
+ 
+    objectron.onResults(onResults);
+ 
+    function distance3D(a, b) {
+      return Math.sqrt(
+        Math.pow(a.x - b.x, 2) +
+        Math.pow(a.y - b.y, 2) +
+        Math.pow(a.z - b.z, 2)
+      );
     }
  
-    async function main() {
-
-      await setupCamera();
-
-      const model = await cocoSsd.load();
+    function getBoxDimensions(keypoints3D) {
+      const FRONT_BOTTOM_LEFT = 0;
+      const FRONT_BOTTOM_RIGHT = 1;
+      const BACK_BOTTOM_LEFT = 4;
+      const FRONT_TOP_LEFT = 3;
  
-      // Setup Three.js scene
-
-      const scene = new THREE.Scene();
-
-      const camera = new THREE.PerspectiveCamera(75, 640 / 480, 0.1, 1000);
-
-      const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('three-canvas'), alpha: true });
-
-      renderer.setSize(640, 480);
-
-      camera.position.z = 5;
+      const length = distance3D(keypoints3D[FRONT_BOTTOM_LEFT], keypoints3D[FRONT_BOTTOM_RIGHT]);
+      const width = distance3D(keypoints3D[FRONT_BOTTOM_LEFT], keypoints3D[BACK_BOTTOM_LEFT]);
+      const height = distance3D(keypoints3D[FRONT_BOTTOM_LEFT], keypoints3D[FRONT_TOP_LEFT]);
  
-      const boxMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000, wireframe: true });
-
-      const boxGeometry = new THREE.BoxGeometry(1, 1, 1);
-
-      const boxMesh = new THREE.Mesh(boxGeometry, boxMaterial);
-
-      scene.add(boxMesh);
+      return { length, width, height };
+    }
  
-      function renderLoop() {
-
-        model.detect(video).then(predictions => {
-
-          const box = predictions.find(p => p.class === 'book' || p.class === 'box' || p.class === 'cup');
-
-          if (box) {
-
-            overlay.innerText = `📦 ${box.class}: ${(box.bbox[2]).toFixed(1)} x ${(box.bbox[3]).toFixed(1)} px`;
-
-            const [x, y, width, height] = box.bbox;
-
-            // Map bbox size to 3D box (scale values for visualization)
-
-            boxMesh.scale.set(width / 100, height / 100, 1);
-
-            boxMesh.position.set((x - 320 + width / 2) / 100, -(y - 240 + height / 2) / 100, 0);
-
-          } else {
-
-            overlay.innerText = "No box detected";
-
-            boxMesh.scale.set(0.001, 0.001, 0.001); // Hide box
-
-          }
+    function onResults(results) {
+      canvasCtx.save();
+      canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+      canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
  
-          renderer.render(scene, camera);
-
-          requestAnimationFrame(renderLoop);
-
+      if (results.objectDetections && results.objectDetections.length > 0) {
+        const detectedObject = results.objectDetections[0];
+        const keypoints3D = detectedObject.keypoints.map(k => k.point3d);
+        const keypoints2D = detectedObject.keypoints.map(k => k.point2d);
+ 
+        const dimensions = getBoxDimensions(keypoints3D);
+ 
+        canvasCtx.fillStyle = "red";
+        canvasCtx.font = "50px sans-serif";
+        canvasCtx.fillText(
+          `L=${dimensions.length.toFixed(2)} W=${dimensions.width.toFixed(2)} H=${dimensions.height.toFixed(2)}`,
+          10, 30
+        );
+ 
+        drawAxes(canvasCtx, keypoints2D, {
+          x: '#ff0000',
+          y: '#00ff00',
+          z: '#0000ff'
         });
-
       }
  
-      renderLoop();
-
+      canvasCtx.restore();
     }
  
-    main();
+    async function setupCamera() {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { width: 860, height: 860, facingMode: { exact: "environment" } },
+        audio: false
+      });
+      videoElement.srcObject = stream;
+      return new Promise(resolve => {
+        videoElement.onloadedmetadata = () => resolve(videoElement);
+      });
+    }
+ 
+    setupCamera().then(() => {
+      videoElement.play();
+      const detectFrame = async () => {
+        await objectron.send({ image: videoElement });
+        requestAnimationFrame(detectFrame);
+      };
+      detectFrame();
+    });
+ 
+    function drawAxes(canvasCtx, landmarks, color) {
+      const { BACK_BOTTOM_RIGHT, BACK_TOP_LEFT, BACK_TOP_RIGHT, FRONT_BOTTOM_LEFT, FRONT_BOTTOM_RIGHT, FRONT_TOP_RIGHT, FRONT_TOP_LEFT, CENTER } = mpObjectron.BOX_KEYPOINTS;
+      const xMidPoint = lineIntersection([landmarks[BACK_BOTTOM_RIGHT], landmarks[FRONT_TOP_RIGHT]], [landmarks[BACK_TOP_RIGHT], landmarks[FRONT_BOTTOM_RIGHT]]);
+      const yMidPoint = lineIntersection([landmarks[BACK_TOP_LEFT], landmarks[FRONT_TOP_RIGHT]], [landmarks[FRONT_TOP_LEFT], landmarks[BACK_TOP_RIGHT]]);
+      const zMidPoint = lineIntersection([landmarks[FRONT_TOP_RIGHT], landmarks[FRONT_BOTTOM_LEFT]], [landmarks[FRONT_TOP_LEFT], landmarks[FRONT_BOTTOM_RIGHT]]);
+ 
+      const LINE_WIDTH = 8;
+      const TRIANGLE_BASE = 2 * LINE_WIDTH;
+ 
+      drawingUtils.drawConnectors(canvasCtx, [landmarks[CENTER], xMidPoint], [[0, 1]], { color: color.x, lineWidth: LINE_WIDTH });
+      drawingUtils.drawConnectors(canvasCtx, [landmarks[CENTER], yMidPoint], [[0, 1]], { color: color.y, lineWidth: LINE_WIDTH });
+      drawingUtils.drawConnectors(canvasCtx, [landmarks[CENTER], zMidPoint], [[0, 1]], { color: color.z, lineWidth: LINE_WIDTH });
+ 
+      drawTriangle(canvasCtx, xMidPoint, TRIANGLE_BASE, TRIANGLE_BASE, color.x, arctan360(xMidPoint.x - landmarks[CENTER].x, xMidPoint.y - landmarks[CENTER].y) + Math.PI / 2);
+      drawTriangle(canvasCtx, yMidPoint, TRIANGLE_BASE, TRIANGLE_BASE, color.y, arctan360(yMidPoint.x - landmarks[CENTER].x, yMidPoint.y - landmarks[CENTER].y) + Math.PI / 2);
+      drawTriangle(canvasCtx, zMidPoint, TRIANGLE_BASE, TRIANGLE_BASE, color.z, arctan360(zMidPoint.x - landmarks[CENTER].x, zMidPoint.y - landmarks[CENTER].y) + Math.PI / 2);
+    }
+ 
+    function lineIntersection(a, b) {
+      const yDiffB = b[0].y - b[1].y;
+      const xDiffB = b[0].x - b[1].x;
+      const top = (a[0].x - b[0].x) * yDiffB - (a[0].y - b[0].y) * xDiffB;
+      const bot = (a[0].x - a[1].x) * yDiffB - (a[0].y - a[1].y) * xDiffB;
+      const t = top / bot;
+      return {
+        x: a[0].x + t * (a[1].x - a[0].x),
+        y: a[0].y + t * (a[1].y - a[0].y),
+        depth: 0,
+      };
+    }
+ 
+    function drawTriangle(ctx, point, height, base, color, rotation = 0) {
+      const canvas = ctx.canvas;
+      const realX = canvas.width * point.x;
+      const realY = canvas.height * point.y;
+      ctx.save();
+      ctx.beginPath();
+      ctx.fillStyle = color;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1;
+      ctx.translate(realX, realY);
+      ctx.rotate(rotation);
+      ctx.moveTo(base / 2, 0);
+      ctx.lineTo(0, -height);
+      ctx.lineTo(-base / 2, 0);
+      ctx.lineTo(base / 2, 0);
+      ctx.translate(-realX, -realY);
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
+    }
+ 
+    function arctan360(x, y) {
+      if (x === 0) {
+        return y >= 0 ? Math.PI / 2 : -Math.PI / 2;
+      }
+      const angle = Math.atan(y / x);
+      if (x > 0) {
+        return angle;
+      }
+      return y >= 0 ? (angle + Math.PI) : angle - Math.PI;
+    }
 </script>
 </body>
-</html>
  
+</html>
