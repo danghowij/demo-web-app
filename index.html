@@ -2,176 +2,105 @@
 <html lang="en">
  
 <head>
-<meta charset="UTF-8">
-<title>Objectron Box Dimensions</title>
-<style>
-    video,
-    canvas {
-      position: absolute;
-      top: 0;
-      left: 0;
-    }
-</style>
+    <meta charset="UTF-8">
+    <title>Objectron Box Dimensions</title>
+    <style>
+        video,
+        canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+    </style>
 </head>
  
 <body>
-<video class="input_video" autoplay muted playsinline style="width: 860px; height: 860px;"></video>
-<canvas class="output_canvas" width="860" height="860"></canvas>
+    <video class="input_video" autoplay muted playsinline style="width: 960px; height: 960px;"></video>
+    <canvas class="output_canvas" width="960" height="960"></canvas>
  
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/objectron/objectron.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
+    <!-- Thêm script MediaPipe -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/objectron/objectron.js"></script>
+    <script>
+        const videoElement = document.querySelector('.input_video');
+        const canvasElement = document.querySelector('.output_canvas');
+        const canvasCtx = canvasElement.getContext('2d');
  
-  <script>
-    const videoElement = document.querySelector('.input_video');
-    const canvasElement = document.querySelector('.output_canvas');
-    const canvasCtx = canvasElement.getContext('2d');
- 
-    const objectron = new Objectron({
-      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/objectron/${file}`
-    });
- 
-    objectron.setOptions({
-      modelName: 'Cup',
-      maxNumObjects: 1,
-      minDetectionConfidence: 0.5,
-      minTrackingConfidence: 0.99,
-    });
- 
-    objectron.onResults(onResults);
- 
-    function distance3D(a, b) {
-      return Math.sqrt(
-        Math.pow(a.x - b.x, 2) +
-        Math.pow(a.y - b.y, 2) +
-        Math.pow(a.z - b.z, 2)
-      );
-    }
- 
-    function getBoxDimensions(keypoints3D) {
-      const FRONT_BOTTOM_LEFT = 0;
-      const FRONT_BOTTOM_RIGHT = 1;
-      const BACK_BOTTOM_LEFT = 4;
-      const FRONT_TOP_LEFT = 3;
- 
-      const length = distance3D(keypoints3D[FRONT_BOTTOM_LEFT], keypoints3D[FRONT_BOTTOM_RIGHT]);
-      const width = distance3D(keypoints3D[FRONT_BOTTOM_LEFT], keypoints3D[BACK_BOTTOM_LEFT]);
-      const height = distance3D(keypoints3D[FRONT_BOTTOM_LEFT], keypoints3D[FRONT_TOP_LEFT]);
- 
-      return { length, width, height };
-    }
- 
-    function onResults(results) {
-      canvasCtx.save();
-      canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-      canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
- 
-      if (results.objectDetections && results.objectDetections.length > 0) {
-        const detectedObject = results.objectDetections[0];
-        const keypoints3D = detectedObject.keypoints.map(k => k.point3d);
-        const keypoints2D = detectedObject.keypoints.map(k => k.point2d);
- 
-        const dimensions = getBoxDimensions(keypoints3D);
- 
-        canvasCtx.fillStyle = "red";
-        canvasCtx.font = "50px sans-serif";
-        canvasCtx.fillText(
-          `L=${dimensions.length.toFixed(2)} W=${dimensions.width.toFixed(2)} H=${dimensions.height.toFixed(2)}`,
-          10, 30
-        );
- 
-        drawAxes(canvasCtx, keypoints2D, {
-          x: '#ff0000',
-          y: '#00ff00',
-          z: '#0000ff'
+        const objectron = new Objectron({
+            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/objectron/${file}`
         });
-      }
  
-      canvasCtx.restore();
-    }
+        objectron.setOptions({
+            modelName: 'Cup',
+            maxNumObjects: 1,
+            minDetectionConfidence: 0.5,
+            minTrackingConfidence: 0.99,
+        });
  
-    async function setupCamera() {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: 860, height: 860, facingMode: { exact: "environment" } },
-        audio: false
-      });
-      videoElement.srcObject = stream;
-      return new Promise(resolve => {
-        videoElement.onloadedmetadata = () => resolve(videoElement);
-      });
-    }
+        objectron.onResults(onResults);
  
-    setupCamera().then(() => {
-      videoElement.play();
-      const detectFrame = async () => {
-        await objectron.send({ image: videoElement });
-        requestAnimationFrame(detectFrame);
-      };
-      detectFrame();
-    });
+        function distance3D(a, b) {
+            return Math.sqrt(
+                Math.pow(a.x - b.x, 2) +
+                Math.pow(a.y - b.y, 2) +
+                Math.pow(a.z - b.z, 2)
+            );
+        }
  
-    function drawAxes(canvasCtx, landmarks, color) {
-      const { BACK_BOTTOM_RIGHT, BACK_TOP_LEFT, BACK_TOP_RIGHT, FRONT_BOTTOM_LEFT, FRONT_BOTTOM_RIGHT, FRONT_TOP_RIGHT, FRONT_TOP_LEFT, CENTER } = mpObjectron.BOX_KEYPOINTS;
-      const xMidPoint = lineIntersection([landmarks[BACK_BOTTOM_RIGHT], landmarks[FRONT_TOP_RIGHT]], [landmarks[BACK_TOP_RIGHT], landmarks[FRONT_BOTTOM_RIGHT]]);
-      const yMidPoint = lineIntersection([landmarks[BACK_TOP_LEFT], landmarks[FRONT_TOP_RIGHT]], [landmarks[FRONT_TOP_LEFT], landmarks[BACK_TOP_RIGHT]]);
-      const zMidPoint = lineIntersection([landmarks[FRONT_TOP_RIGHT], landmarks[FRONT_BOTTOM_LEFT]], [landmarks[FRONT_TOP_LEFT], landmarks[FRONT_BOTTOM_RIGHT]]);
+        function getBoxDimensions(keypoints3D) {
+            const FRONT_BOTTOM_LEFT = 0;
+            const FRONT_BOTTOM_RIGHT = 1;
+            const BACK_BOTTOM_LEFT = 4;
+            const FRONT_TOP_LEFT = 3;
  
-      const LINE_WIDTH = 8;
-      const TRIANGLE_BASE = 2 * LINE_WIDTH;
+            const length = distance3D(keypoints3D[FRONT_BOTTOM_LEFT], keypoints3D[FRONT_BOTTOM_RIGHT]);
+            const width = distance3D(keypoints3D[FRONT_BOTTOM_LEFT], keypoints3D[BACK_BOTTOM_LEFT]);
+            const height = distance3D(keypoints3D[FRONT_BOTTOM_LEFT], keypoints3D[FRONT_TOP_LEFT]);
  
-      drawingUtils.drawConnectors(canvasCtx, [landmarks[CENTER], xMidPoint], [[0, 1]], { color: color.x, lineWidth: LINE_WIDTH });
-      drawingUtils.drawConnectors(canvasCtx, [landmarks[CENTER], yMidPoint], [[0, 1]], { color: color.y, lineWidth: LINE_WIDTH });
-      drawingUtils.drawConnectors(canvasCtx, [landmarks[CENTER], zMidPoint], [[0, 1]], { color: color.z, lineWidth: LINE_WIDTH });
+            return { length, width, height };
+        }
  
-      drawTriangle(canvasCtx, xMidPoint, TRIANGLE_BASE, TRIANGLE_BASE, color.x, arctan360(xMidPoint.x - landmarks[CENTER].x, xMidPoint.y - landmarks[CENTER].y) + Math.PI / 2);
-      drawTriangle(canvasCtx, yMidPoint, TRIANGLE_BASE, TRIANGLE_BASE, color.y, arctan360(yMidPoint.x - landmarks[CENTER].x, yMidPoint.y - landmarks[CENTER].y) + Math.PI / 2);
-      drawTriangle(canvasCtx, zMidPoint, TRIANGLE_BASE, TRIANGLE_BASE, color.z, arctan360(zMidPoint.x - landmarks[CENTER].x, zMidPoint.y - landmarks[CENTER].y) + Math.PI / 2);
-    }
+        function onResults(results) {
+            canvasCtx.save();
+            canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+            canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
  
-    function lineIntersection(a, b) {
-      const yDiffB = b[0].y - b[1].y;
-      const xDiffB = b[0].x - b[1].x;
-      const top = (a[0].x - b[0].x) * yDiffB - (a[0].y - b[0].y) * xDiffB;
-      const bot = (a[0].x - a[1].x) * yDiffB - (a[0].y - a[1].y) * xDiffB;
-      const t = top / bot;
-      return {
-        x: a[0].x + t * (a[1].x - a[0].x),
-        y: a[0].y + t * (a[1].y - a[0].y),
-        depth: 0,
-      };
-    }
+            if (results.objectDetections && results.objectDetections.length > 0) {
+                const detectedObject = results.objectDetections[0];
+                const keypoints3D = detectedObject.keypoints.map(k => k.point3d);
+                const dimensions = getBoxDimensions(keypoints3D);
+                canvasCtx.fillStyle = "red";
+                canvasCtx.font = "50px sans-serif";
+                canvasCtx.fillText(
+                    `L=${dimensions.length.toFixed(2)} W=${dimensions.width.toFixed(2)} H=${dimensions.height.toFixed(2)}`,
+                    10, 30
+                );
+            }
  
-    function drawTriangle(ctx, point, height, base, color, rotation = 0) {
-      const canvas = ctx.canvas;
-      const realX = canvas.width * point.x;
-      const realY = canvas.height * point.y;
-      ctx.save();
-      ctx.beginPath();
-      ctx.fillStyle = color;
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 1;
-      ctx.translate(realX, realY);
-      ctx.rotate(rotation);
-      ctx.moveTo(base / 2, 0);
-      ctx.lineTo(0, -height);
-      ctx.lineTo(-base / 2, 0);
-      ctx.lineTo(base / 2, 0);
-      ctx.translate(-realX, -realY);
-      ctx.fill();
-      ctx.stroke();
-      ctx.restore();
-    }
+            canvasCtx.restore();
+        }
  
-    function arctan360(x, y) {
-      if (x === 0) {
-        return y >= 0 ? Math.PI / 2 : -Math.PI / 2;
-      }
-      const angle = Math.atan(y / x);
-      if (x > 0) {
-        return angle;
-      }
-      return y >= 0 ? (angle + Math.PI) : angle - Math.PI;
-    }
-</script>
+        async function setupCamera() {
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: { width: 960, height: 960, facingMode: { exact: "environment" } },
+                audio: false
+            });
+            videoElement.srcObject = stream;
+            return new Promise(resolve => {
+                videoElement.onloadedmetadata = () => resolve(videoElement);
+            });
+        }
+ 
+        setupCamera().then(() => {
+            videoElement.play();
+ 
+            const detectFrame = async () => {
+                await objectron.send({ image: videoElement });
+                requestAnimationFrame(detectFrame);
+            };
+ 
+            detectFrame();
+        });
+    </script>
 </body>
- 
 </html>
+ 
